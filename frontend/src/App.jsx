@@ -54,6 +54,17 @@ const EVENT_TEMPLATES = {
   }
 };
 
+const MOCK_IDENTITIES = [
+  { name: 'Ana Silva', email: 'ana.silva@empresa.com.br' },
+  { name: 'Bruno Santos', email: 'bruno.santos@techstart.io' },
+  { name: 'Camila Oliveira', email: 'camila.oliveira@growthcorp.com' },
+  { name: 'Diego Rodrigues', email: 'diego.rodrigues@devs.com.br' },
+  { name: 'Elena Costa', email: 'elena.costa@saasmarketing.net' },
+  { name: 'Felipe Almeida', email: 'felipe.almeida@fintechhub.co' },
+  { name: 'Gabriela Lima', email: 'gabriela.lima@agenciadigital.com' },
+  { name: 'Hugo Pereira', email: 'hugo.pereira@analyticslabs.io' }
+];
+
 function App() {
   // Simulator State
   const [eventType, setEventType] = useState('page_view');
@@ -75,6 +86,7 @@ function App() {
   const [clickhouseStore, setClickhouseStore] = useState([]);
   const [elasticsearchStore, setElasticsearchStore] = useState([]);
   const [activeInspectorTab, setActiveInspectorTab] = useState('clickhouse');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Analytics Stats
@@ -103,8 +115,13 @@ function App() {
     setCustomEventId(uuid());
     setCustomLeadId(uuid());
     
-    // Format preset properties
-    const presetProps = EVENT_TEMPLATES[eventType].properties;
+    // Format preset properties with randomized contact details
+    const randomIdentity = MOCK_IDENTITIES[Math.floor(Math.random() * MOCK_IDENTITIES.length)];
+    const presetProps = {
+      ...EVENT_TEMPLATES[eventType].properties,
+      contact_name: randomIdentity.name,
+      contact_email: randomIdentity.email
+    };
     setCustomProperties(JSON.stringify(presetProps, null, 2));
   };
 
@@ -258,6 +275,18 @@ function App() {
       }
     }
   };
+
+  // Filter Elasticsearch lead index based on search query
+  const filteredElasticsearch = elasticsearchStore.filter(item => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      item.event_id?.toLowerCase().includes(query) ||
+      item.lead_id?.toLowerCase().includes(query) ||
+      item.event_type?.toLowerCase().includes(query) ||
+      JSON.stringify(item.properties || {}).toLowerCase().includes(query)
+    );
+  });
 
   return (
     <div className="app-container">
@@ -545,8 +574,8 @@ function App() {
                     <table>
                       <thead>
                         <tr>
-                          <th>Event Reference</th>
-                          <th>Contact ID</th>
+                          <th>Event Ref</th>
+                          <th>Contact Profile</th>
                           <th>Action Type</th>
                           <th>Time Logged</th>
                         </tr>
@@ -555,7 +584,10 @@ function App() {
                         {clickhouseStore.map((item, idx) => (
                           <tr key={idx} onClick={() => setExpandedLogId(expandedLogId === item.event_id ? null : item.event_id)} style={{ cursor: 'pointer' }}>
                             <td className="mono-input" style={{ color: 'var(--color-primary)' }}>{item.event_id?.slice(0, 8)}...</td>
-                            <td className="mono-input">{item.lead_id?.slice(0, 8)}...</td>
+                            <td>
+                              <div style={{ fontWeight: '500', color: 'var(--text-highlight)' }}>{item.properties?.contact_name || 'Anonymous Lead'}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.properties?.contact_email || `ID: ${item.lead_id?.slice(0, 8)}...`}</div>
+                            </td>
                             <td>
                               <span className={`badge badge-${item.event_type}`}>
                                 {item.event_type}
@@ -574,26 +606,41 @@ function App() {
             {/* Elasticsearch Content */}
             {activeInspectorTab === 'elasticsearch' && (
               <div className="db-grid">
-                {elasticsearchStore.length === 0 ? (
+                <div style={{ marginBottom: '1rem' }}>
+                  <input
+                    type="text"
+                    placeholder="Search leads in Elasticsearch (by Contact ID, Action Type, or Custom Properties)..."
+                    className="form-control"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{ fontSize: '0.85rem' }}
+                  />
+                </div>
+                {filteredElasticsearch.length === 0 ? (
                   <div className="no-data-placeholder">
-                    No contacts indexed in Elasticsearch yet.
+                    {elasticsearchStore.length === 0 
+                      ? "No contacts indexed in Elasticsearch yet." 
+                      : "No matching leads found for your search."}
                   </div>
                 ) : (
                   <div className="db-table-wrapper">
                     <table>
                       <thead>
                         <tr>
-                          <th>Index Document ID</th>
-                          <th>Contact ID</th>
+                          <th>Index Doc ID</th>
+                          <th>Contact Profile</th>
                           <th>Action Type</th>
                           <th>Index Timestamp</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {elasticsearchStore.map((item, idx) => (
+                        {filteredElasticsearch.map((item, idx) => (
                           <tr key={idx} onClick={() => setExpandedLogId(expandedLogId === item.event_id ? null : item.event_id)} style={{ cursor: 'pointer' }}>
                             <td className="mono-input" style={{ color: 'var(--color-info)' }}>es_{item.event_id?.slice(0, 6)}</td>
-                            <td className="mono-input">{item.lead_id?.slice(0, 8)}...</td>
+                            <td>
+                              <div style={{ fontWeight: '500', color: 'var(--text-highlight)' }}>{item.properties?.contact_name || 'Anonymous Lead'}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{item.properties?.contact_email || `ID: ${item.lead_id?.slice(0, 8)}...`}</div>
+                            </td>
                             <td>
                               <span className={`badge badge-${item.event_type}`}>
                                 {item.event_type}
