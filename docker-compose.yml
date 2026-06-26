@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: bundle exec puma -C config/puma.rb
+    ports:
+      - "3000:3000"
+    environment:
+      - RAILS_ENV=development
+      - PORT=3000
+      - MOCK_KAFKA=false
+      - MOCK_CLICKHOUSE=false
+      - MOCK_ELASTICSEARCH=false
+      - KAFKA_BROKERS=redpanda:9092
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=8123
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - DATABASE_HOST=db
+      - DATABASE_USERNAME=postgres
+      - DATABASE_PASSWORD=password
+    depends_on:
+      - redpanda
+      - clickhouse
+      - elasticsearch
+      - db
+
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: bundle exec rake kafka:consume_events
+    environment:
+      - RAILS_ENV=development
+      - MOCK_KAFKA=false
+      - MOCK_CLICKHOUSE=false
+      - MOCK_ELASTICSEARCH=false
+      - KAFKA_BROKERS=redpanda:9092
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=8123
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+    depends_on:
+      - redpanda
+      - clickhouse
+      - elasticsearch
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: rd_marketing_development
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  # Redpanda - High performance Kafka-compatible broker (C++ based, low RAM footprint)
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v23.2.1
+    command:
+      - redpanda start
+      - --smp 1
+      - --memory 512M
+      - --overprovisioned
+      - --node-id 0
+      - --kafka-addr PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      - --advertise-kafka-addr PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
+      - --pandaproxy-addr 0.0.0.0:28082,OUTSIDE://0.0.0.0:8082
+      - --advertise-pandaproxy-addr PLAINTEXT://redpanda:28082,OUTSIDE://localhost:8082
+    ports:
+      - "9092:9092"
+      - "8082:8082"
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+
+  # ClickHouse - Columnar database for high-throughput streaming events
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8-alpine
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./docker/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  # Elasticsearch - Text search database for lead profile segment queries
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+  # Prometheus - Systems metrics scraping and monitoring
+  prometheus:
+    image: prom/prometheus:v2.47.1
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  # Grafana - Monitoring Dashboard UI
+  grafana:
+    image: grafana/grafana:10.2.0
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+volumes:
+  pg_data:
+  redpanda_data:
+  clickhouse_data:
+  es_data:

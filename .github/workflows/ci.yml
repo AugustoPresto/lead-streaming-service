@@ -1,0 +1,31 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    env:
+      RAILS_ENV: test
+      MOCK_KAFKA: "true"
+      MOCK_CLICKHOUSE: "true"
+      MOCK_ELASTICSEARCH: "true"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2.2'
+          bundler-cache: true # runs 'bundle install' and caches gems automatically
+
+      - name: Run RSpec tests
+        run: bundle exec rspec
