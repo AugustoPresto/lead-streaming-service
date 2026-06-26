@@ -118,4 +118,37 @@ RSpec.describe Api::V1::EventsController, type: :controller do
       end
     end
   end
+
+  describe "GET #debug" do
+    it "processes the mock queue and updates the databases" do
+      LeadEvents::Producer.publish(valid_payload)
+
+      get :debug, as: :json
+      expect(response).to have_http_status(:ok)
+      
+      json = JSON.parse(response.body, symbolize_names: true)
+      expect(json[:kafka_queue]).to be_empty # Drain simulation
+      expect(json[:clickhouse_store].map { |e| e[:event_id] }).to include(valid_payload[:event_id])
+      expect(json[:elasticsearch_store].map { |e| e[:event_id] }).to include(valid_payload[:event_id])
+    end
+  end
+
+
+  describe "POST #clear" do
+    it "clears all mock queues and stores" do
+      LeadEvents::Producer.publish(valid_payload)
+      Clickhouse::LeadEventRepository.bulk_insert([valid_payload])
+      Elasticsearch::LeadEventRepository.bulk_index([valid_payload])
+
+      post :clear, as: :json
+      expect(response).to have_http_status(:ok)
+
+      get :debug, as: :json
+      json = JSON.parse(response.body, symbolize_names: true)
+      expect(json[:kafka_queue]).to be_empty
+      expect(json[:clickhouse_store]).to be_empty
+      expect(json[:elasticsearch_store]).to be_empty
+    end
+  end
 end
+

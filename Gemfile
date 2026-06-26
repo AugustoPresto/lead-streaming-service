@@ -6,6 +6,8 @@ gem "rails", "~> 7.1.5"
 gem "pg", "~> 1.1"
 gem "puma", ">= 5.0"
 gem "bootsnap", require: false
+gem "rack-cors"
+
 
 # Data Streaming & Event Validation
 gem "dry-validation", "~> 1.10"

@@ -41,6 +41,38 @@ module Api
         }, status: :internal_server_error
       end
 
+      # GET /api/v1/events/debug
+      def debug
+        # In mock mode, process queued events synchronously to simulate background worker consumption
+        # since Puma and Rake daemons run in separate OS memory spaces.
+        if LeadEvents::Producer.mock_queue.any?
+          messages = LeadEvents::Producer.mock_queue.map do |event|
+            Struct.new(:payload).new(event.to_json)
+          end
+
+          begin
+            LeadEvents::Consumer.process_batch(messages)
+            LeadEvents::Producer.clear_mock_queue!
+          rescue => e
+            Rails.logger.error("[Api::V1::EventsController] Mock processing failed: #{e.message}")
+          end
+        end
+
+        render json: {
+          kafka_queue: LeadEvents::Producer.mock_queue,
+          clickhouse_store: Clickhouse::LeadEventRepository.mock_store,
+          elasticsearch_store: Elasticsearch::LeadEventRepository.mock_store
+        }
+      end
+
+      # POST /api/v1/events/clear
+      def clear
+        LeadEvents::Producer.clear_mock_queue!
+        Clickhouse::LeadEventRepository.clear_mock_store!
+        Elasticsearch::LeadEventRepository.clear_mock_store!
+        render json: { status: "success", message: "Mock databases cleared." }
+      end
+
       private
 
       def event_params

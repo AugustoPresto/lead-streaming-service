@@ -204,9 +204,25 @@ curl -X POST http://localhost:3000/api/v1/events \
 ```
 You will get a `202 Accepted` response. Check `log/development.log` to see the Mock Producer logs.
 
+### Running the React Frontend Dashboard
+To run the interactive simulator and mock database inspector:
+1. Navigate to the `frontend` folder:
+   ```bash
+   cd frontend
+   ```
+2. Install npm dependencies (if not already done):
+   ```bash
+   npm install
+   ```
+3. Start the Vite dev server:
+   ```bash
+   npm run dev
+   ```
+4. Open your browser and navigate to `http://localhost:5173`. You will see the event simulator, pipeline visualizer, and live mock database tables.
+
 ---
 
-## 7. Running with Full Docker Stack (Optional)
+## 8. Running with Full Docker Stack (Optional)
 If you wish to spin up the actual Redpanda, Clickhouse, Elasticsearch, and Prometheus servers, ensure you have Docker installed and run:
 ```bash
 docker-compose up --build
