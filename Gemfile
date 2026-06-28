@@ -23,7 +23,7 @@ gem "yabeda-prometheus", "~> 0.9.0"
 gem "yabeda-rails", "~> 0.9.0"
 
 group :development, :test do
-  gem "debug", platforms: %i[ mri windows ]
+  gem "debug", platforms: %i[ mri mingw x64_mingw ]
   gem "rspec-rails", "~> 6.1"
   gem "factory_bot_rails", "~> 6.4"
   gem "faker", "~> 3.2"

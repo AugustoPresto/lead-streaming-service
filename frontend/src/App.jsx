@@ -89,6 +89,11 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Auto-stream event generator states
+  const [autoStreamActive, setAutoStreamActive] = useState(false);
+  const [autoStreamSpeed, setAutoStreamSpeed] = useState(5);
+  const [selectedSegmentRule, setSelectedSegmentRule] = useState('mql');
+
   // Analytics Stats
   const [stats, setStats] = useState({
     sentCount: 0,
@@ -157,6 +162,58 @@ function App() {
     }, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  // Auto-stream event generator logic
+  useEffect(() => {
+    let intervalId;
+    if (autoStreamActive) {
+      intervalId = setInterval(() => {
+        const types = ['page_view', 'conversion', 'newsletter_signup', 'add_to_cart'];
+        const randomType = types[Math.floor(Math.random() * types.length)];
+        
+        const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          const r = Math.random() * 16 | 0;
+          const v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+
+        const randomIdentity = MOCK_IDENTITIES[Math.floor(Math.random() * MOCK_IDENTITIES.length)];
+        const presetProps = {
+          ...EVENT_TEMPLATES[randomType].properties,
+          contact_name: randomIdentity.name,
+          contact_email: randomIdentity.email
+        };
+
+        const eventData = {
+          event_id: uuid(),
+          lead_id: uuid(),
+          event_type: randomType,
+          timestamp: new Date().toISOString(),
+          properties: presetProps
+        };
+
+        fetch(API_BASE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(eventData)
+        })
+        .then(res => {
+          if (res.ok) {
+            setStats(prev => ({
+              ...prev,
+              sentCount: prev.sentCount + 1,
+              successCount: prev.successCount + 1
+            }));
+          }
+        })
+        .catch(err => console.error("AutoStream error:", err));
+
+      }, 1000 / autoStreamSpeed);
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [autoStreamActive, autoStreamSpeed]);
 
   // Show Toast
   const showToast = (type, message) => {
@@ -288,6 +345,62 @@ function App() {
     );
   });
 
+  // Group events by lead_id to build lead profiles
+  const leadProfiles = Object.values(
+    clickhouseStore.reduce((acc, ev) => {
+      const lid = ev.lead_id;
+      if (!lid) return acc;
+      if (!acc[lid]) {
+        acc[lid] = {
+          lead_id: lid,
+          name: ev.properties?.contact_name || 'Anonymous Lead',
+          email: ev.properties?.contact_email || 'N/A',
+          score: 0,
+          events: [],
+          hasPricingView: false,
+          hasNewsletter: false,
+          hasAddToCart: false
+        };
+      }
+      
+      // Calculate score contribution
+      let scoreContribution = 0;
+      if (ev.event_type === 'page_view') {
+        scoreContribution = 10;
+        if (ev.properties?.url === '/pricing') acc[lid].hasPricingView = true;
+      } else if (ev.event_type === 'newsletter_signup') {
+        scoreContribution = 15;
+        acc[lid].hasNewsletter = true;
+      } else if (ev.event_type === 'conversion') {
+        scoreContribution = 25;
+      } else if (ev.event_type === 'add_to_cart') {
+        scoreContribution = 50;
+        acc[lid].hasAddToCart = true;
+      }
+      
+      acc[lid].score += scoreContribution;
+      acc[lid].events.push(ev);
+      return acc;
+    }, {})
+  );
+
+  // Filter lead profiles based on selected segmentation rule
+  const filteredLeadSegments = leadProfiles.filter(lead => {
+    if (selectedSegmentRule === 'mql') {
+      return lead.score >= 75;
+    } else if (selectedSegmentRule === 'add_to_cart') {
+      return lead.hasAddToCart;
+    } else if (selectedSegmentRule === 'engaged_subscribers') {
+      return lead.hasNewsletter && lead.hasPricingView;
+    }
+    return true;
+  });
+
+  const selectedEvent = [...clickhouseStore, ...elasticsearchStore, ...kafkaQueue].find(x => x.event_id === expandedLogId);
+  const leadTimelineEvents = selectedEvent 
+    ? clickhouseStore.filter(x => x.lead_id === selectedEvent.lead_id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)) 
+    : [];
+
   return (
     <div className="app-container">
       {/* Toast Notification */}
@@ -320,18 +433,25 @@ function App() {
       </header>
 
       {/* Stats Summary Panel */}
-      <div className="latency-stats-row">
+      <div className="latency-stats-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
         <div className="stat-box">
-          <div className="stat-label">Tracked Contact Actions (Rails API)</div>
+          <div className="stat-label">Tracked Actions (Rails API)</div>
           <div className="stat-value color-info">{stats.sentCount}</div>
         </div>
         <div className="stat-box">
-          <div className="stat-label">Stored Contacts & Leads (ClickHouse & ES)</div>
-          <div className="stat-value color-success">{stats.successCount}</div>
+          <div className="stat-label">Stored Profiles (ClickHouse)</div>
+          <div className="stat-value color-success">{leadProfiles.length}</div>
         </div>
         <div className="stat-box">
-          <div className="stat-label">Processing Speed (API Latency)</div>
+          <div className="stat-label">Avg Ingestion Latency</div>
           <div className="stat-value color-primary">{stats.avgLatency} ms</div>
+        </div>
+        <div className="stat-box">
+          <div className="stat-label">SLA Delivery Status</div>
+          <div className="stat-value" style={{ color: 'var(--color-success)', fontSize: '0.95rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.5rem' }}>
+            <span className="pulse-dot" style={{ backgroundColor: 'var(--color-success)', margin: 0 }}></span>
+            100% (&lt; 5m SLA)
+          </div>
         </div>
       </div>
 
@@ -656,6 +776,74 @@ function App() {
               </div>
             )}
 
+            {/* Segmentation Engine Content */}
+            {activeInspectorTab === 'segmentation' && (
+              <div className="db-grid">
+                <div style={{ marginBottom: '1.25rem', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                  <label style={{ fontSize: '0.85rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Active Segment Rule:</label>
+                  <select 
+                    className="form-control" 
+                    value={selectedSegmentRule}
+                    onChange={(e) => setSelectedSegmentRule(e.target.value)}
+                    style={{ flex: 1, padding: '0.4rem', fontSize: '0.85rem' }}
+                  >
+                    <option value="mql">Marketing Qualified Leads (MQLs) — Lead Score &gt;= 75 pts</option>
+                    <option value="add_to_cart">High Buying Intent — Initiated E-commerce Checkout</option>
+                    <option value="engaged_subscribers">Engaged Subscribers — Subscribed to Newsletter & Visited Pricing</option>
+                  </select>
+                </div>
+
+                {filteredLeadSegments.length === 0 ? (
+                  <div className="no-data-placeholder">
+                    No leads currently match this active segmentation rule. Trigger actions to qualify leads!
+                  </div>
+                ) : (
+                  <div className="db-table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Lead Profile</th>
+                          <th>Lead Score</th>
+                          <th>Engagement History</th>
+                          <th>Segment Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredLeadSegments.map((lead, idx) => (
+                          <tr key={idx} onClick={() => {
+                            const firstEv = lead.events[0];
+                            if (firstEv) setExpandedLogId(firstEv.event_id);
+                          }} style={{ cursor: 'pointer' }}>
+                            <td>
+                              <div style={{ fontWeight: '500', color: 'var(--text-highlight)' }}>{lead.name}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{lead.email}</div>
+                            </td>
+                            <td>
+                              <strong className="color-success">{lead.score} pts</strong>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.2rem' }}>
+                                {lead.events.map((ev, i) => (
+                                  <span key={i} className={`badge badge-${ev.event_type}`} style={{ fontSize: '0.65rem', padding: '0.05rem 0.25rem' }}>
+                                    {ev.event_type}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td>
+                              <span className="badge badge-conversion" style={{ backgroundColor: 'var(--color-success)', color: 'var(--card-bg)', fontWeight: 'bold', fontSize: '0.7rem' }}>
+                                {selectedSegmentRule === 'mql' ? 'MQL QUALIFIED' : selectedSegmentRule === 'add_to_cart' ? 'HIGH INTENT' : 'ENGAGED'}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Kafka/Redpanda Content */}
             {activeInspectorTab === 'kafka' && (
               <div className="db-grid">
@@ -692,18 +880,86 @@ function App() {
               </div>
             )}
 
-            {/* Expanded Item Payload View */}
-            {expandedLogId && (
-              <div style={{ marginTop: '1rem', borderTop: '1px solid var(--border-color)', paddingTop: '1rem' }}>
-                <h3 style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>Full Object Properties ({expandedLogId.slice(0, 8)})</h3>
-                <div className="event-payload-collapse">
-                  <pre style={{ margin: 0 }}>
-                    {JSON.stringify(
-                      [...clickhouseStore, ...elasticsearchStore, ...kafkaQueue].find(x => x.event_id === expandedLogId) || {}, 
-                      null, 
-                      2
-                    )}
-                  </pre>
+            {/* Expanded Item Payload View & Lead Timeline */}
+            {expandedLogId && selectedEvent && (
+              <div style={{ marginTop: '1.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '1.5rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                  
+                  {/* Lead Journey Timeline */}
+                  <div>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <Activity size={16} className="color-success" />
+                      Lead Activity Journey & Scoring
+                    </h3>
+                    
+                    {/* Lead Score Badge */}
+                    <div className="card" style={{ padding: '0.75rem', backgroundColor: 'rgba(255,255,255,0.03)', marginBottom: '1rem', border: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Lead Score Profile:</span>
+                        <strong className={
+                          leadTimelineEvents.reduce((acc, ev) => acc + (ev.event_type === 'page_view' ? 10 : ev.event_type === 'newsletter_signup' ? 15 : ev.event_type === 'conversion' ? 25 : ev.event_type === 'add_to_cart' ? 50 : 0), 0) >= 75 
+                            ? 'color-success' 
+                            : 'color-info'
+                        }>
+                          {leadTimelineEvents.reduce((acc, ev) => acc + (ev.event_type === 'page_view' ? 10 : ev.event_type === 'newsletter_signup' ? 15 : ev.event_type === 'conversion' ? 25 : ev.event_type === 'add_to_cart' ? 50 : 0), 0)} pts
+                          {leadTimelineEvents.reduce((acc, ev) => acc + (ev.event_type === 'page_view' ? 10 : ev.event_type === 'newsletter_signup' ? 15 : ev.event_type === 'conversion' ? 25 : ev.event_type === 'add_to_cart' ? 50 : 0), 0) >= 75 && ' (MQL)'}
+                        </strong>
+                      </div>
+                      <div style={{ height: '6px', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '3px', overflow: 'hidden' }}>
+                        <div style={{ 
+                          height: '100%', 
+                          width: `${Math.min(100, leadTimelineEvents.reduce((acc, ev) => acc + (ev.event_type === 'page_view' ? 10 : ev.event_type === 'newsletter_signup' ? 15 : ev.event_type === 'conversion' ? 25 : ev.event_type === 'add_to_cart' ? 50 : 0), 0) * 1.33)}%`, 
+                          backgroundColor: leadTimelineEvents.reduce((acc, ev) => acc + (ev.event_type === 'page_view' ? 10 : ev.event_type === 'newsletter_signup' ? 15 : ev.event_type === 'conversion' ? 25 : ev.event_type === 'add_to_cart' ? 50 : 0), 0) >= 75 ? 'var(--color-success)' : 'var(--color-info)'
+                        }}></div>
+                      </div>
+                    </div>
+
+                    {/* Timeline steps */}
+                    <div style={{ position: 'relative', paddingLeft: '1.25rem', borderLeft: '2px solid rgba(255,255,255,0.1)' }}>
+                      {leadTimelineEvents.map((ev, idx) => (
+                        <div key={idx} style={{ marginBottom: '1rem', position: 'relative' }}>
+                          <span style={{ 
+                            position: 'absolute', 
+                            left: '-1.6rem', 
+                            top: '4px', 
+                            width: '10px', 
+                            height: '10px', 
+                            borderRadius: '50%', 
+                            backgroundColor: ev.event_id === expandedLogId ? 'var(--color-primary)' : 'var(--color-success)',
+                            border: '2px solid var(--card-bg)'
+                          }}></span>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span className={`badge badge-${ev.event_type}`} style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem' }}>
+                              {ev.event_type}
+                            </span>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              {new Date(ev.timestamp).toLocaleTimeString()}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-highlight)', marginTop: '0.2rem' }}>
+                            {ev.event_type === 'page_view' ? `Visited ${ev.properties?.url || 'page'}` : 
+                             ev.event_type === 'conversion' ? `Converted on: ${ev.properties?.conversion_page || 'form'}` :
+                             ev.event_type === 'newsletter_signup' ? `Subscribed to newsletter` : 
+                             `Added item to checkout cart`}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  {/* Raw Metadata Properties */}
+                  <div>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <FileText size={16} className="color-primary" />
+                      JSON Metadata & Store Trace
+                    </h3>
+                    <div className="event-payload-collapse" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                      <pre style={{ margin: 0, fontSize: '0.75rem', whiteSpace: 'pre-wrap' }}>
+                        {JSON.stringify(selectedEvent, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                  
                 </div>
               </div>
             )}

@@ -1,22 +1,100 @@
-# High-Volume Lead Event Streaming & Ingestion Engine
+# Marketing Lead Operations & Automation Engine (RD Station & HubSpot Model)
 [![CI/CD Pipeline](https://github.com/AugustoPresto/lead-streaming-service/actions/workflows/ci.yml/badge.svg)](https://github.com/AugustoPresto/lead-streaming-service/actions/workflows/ci.yml)
 [![Ruby Version](https://img.shields.io/badge/Ruby-3.2.2-red.svg)](https://www.ruby-lang.org/)
-[![Rails Version](https://img.shields.io/badge/Rails-7.1.5-blue.svg)](https://rubyonrails.org/)
+[![Rails Version](https://img.shields.io/badge/Rails-7.1.6-blue.svg)](https://rubyonrails.org/)
 
-An enterprise-grade, distributed, and highly available Ruby on Rails API microservice designed to ingest, validate, and process massive volumes of lead events. Engineered to guarantee low-latency, consistency, and analytical write-throughput, achieving data availability for segmentation and querying under the **5-minute SLA**.
+An enterprise-ready lead management and marketing automation platform designed to capture, score, and segment customer actions in real-time. Engineered to support high-velocity marketing operations similar to **RD Station** and **HubSpot**, this engine enables growth teams to turn anonymous website visitors into qualified opportunities and trigger automated campaigns under a **5-minute data SLA**.
 
 ---
 
-## 1. System Architecture
+## 1. Core Marketing & Operations Features
 
-The service uses a decoupled, event-driven architecture (EDA). The ingestion layer is completely separated from the storage engines via an asynchronous broker.
+This platform provides business-ready interfaces and workflows to help growth, marketing, and sales operations teams run real-time campaigns:
+
+### 🎯 Dynamic Lead Scoring System
+Every action taken by a contact dynamically updates their profile and increments their **Lead Score**. This score acts as a real-time indicator of buying intent and sales readiness:
+* **Page View** (`page_view` on `/pricing` or `/features`): Indicates prospect is researching options. **(+10 pts)**
+* **Newsletter Signup** (`newsletter_signup`): Captures basic subscriber permission. **(+15 pts)**
+* **Form Conversion** (`conversion` on an eBook / Whitepaper): Demonstrates content engagement. **(+25 pts)**
+* **Checkout Initiated** (`add_to_cart`): Indicates high buying intent. **(+50 pts)**
+
+### 📈 Advanced Segmentation Engine
+Define active lists and rule-based segments that update in real-time. Growth teams can immediately target contacts matching these rules:
+1. **Marketing Qualified Leads (MQLs)**: Contacts whose cumulative Lead Score is $\ge$ 75 points. Ready for sales handoff.
+2. **High Buying Intent**: Contacts who initiated an e-commerce checkout.
+3. **Engaged Subscribers**: Newsletter subscribers who also visited the pricing page.
+
+### ⏳ Customer Journeys & Timelines
+Clicking on any contact in the database inspector renders a chronological **Activity Timeline**. Sales representatives can inspect this journey to understand the contact's interest and history before starting outreach.
+
+### ⚡ HubSpot-Style Marketing Dashboard
+An interactive React dashboard (`http://localhost:5173`) that lets marketing operators:
+* Select preset customer actions (Newsletter Signup, Pricing Page View, eBook Conversion, Checkout).
+* Auto-generate high-throughput events to simulate massive marketing campaigns (1 to 10 events/second).
+* View live ClickHouse analytics, Elasticsearch segment docs, and Redpanda queue lag.
+
+---
+
+## 2. Business Flow & Lifecycle Use Case
+
+To illustrate how events translate into automated marketing workflows, here is a typical customer journey:
+
+```mermaid
+graph TD
+    Lead[Visitor enters Site] -->|1. Page View /pricing| Score1[Score: 10 pts]
+    Score1 -->|2. Newsletter Signup| Score2[Score: 25 pts]
+    Score2 -->|3. Ebook Conversion| Score3[Score: 50 pts]
+    Score3 -->|4. Checkout Initiated| Score4[Score: 100 pts]
+    
+    Score4 -->|5. Triggers MQL Rule| SegEngine[Segmentation Engine]
+    SegEngine -->|6. Add to Active Segment| Segment[MQL Segment]
+    Segment -->|7. Trigger Automation| Workflow[Marketing Automation Workflow]
+    Workflow -->|8. Send Email Campaign| EmailService[Sales Handoff Email Sent]
+```
+
+### Example Lifecycle:
+1. **Research Phase**: *Ana Silva* visits the pricing page. An event (`page_view`) is captured, giving her **10 points**.
+2. **Permission Phase**: *Ana* signs up for the newsletter. Her profile is enriched with her email (`ana.silva@agenciadigital.com`), and her score rises to **25 points**.
+3. **Engagement Phase**: *Ana* downloads a marketing eBook. A `conversion` event is registered, raising her score to **50 points**.
+4. **Buying Intent**: *Ana* adds a product plan to her cart. The `add_to_cart` event gives her **50 points**, pushing her total score to **100 points**.
+5. **Campaign Trigger**: The **Segmentation Engine** detects her score is $\ge$ 75, qualifies her as an **MQL**, and triggers an automated email campaign offering a direct sales call.
+
+---
+
+## 3. How to Run & Verify Locally
+
+### 1. Start the Rails API Backend
+Ensure you have Ruby 3.2.2 (RVM recommended) and Bundler installed, then execute:
+```bash
+bundle install
+bundle exec rails server -p 3000
+```
+
+### 2. Start the React Frontend Dashboard
+In a separate terminal, navigate to the `frontend` folder, install npm dependencies, and start Vite:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Open `http://localhost:5173` in your browser.
+
+### 3. Generate Simulated Campaigns
+1. On the left side of the dashboard, locate the **High-Throughput Stream Generator** card.
+2. Click **Start Auto-Stream Generator** at **5 e/s** or **10 e/s** to simulate real-time traffic.
+3. Select the **Segmentation Engine** tab in the database inspector to see contacts being grouped automatically into segments like **MQLs** as their scores increase!
+
+---
+
+## Appendix: Technical Architecture & Specs
+
+Under the hood, the engine is designed for high-availability, low-latency, and high write-throughput using a decoupled, event-driven architecture (EDA):
 
 ```mermaid
 graph TD
     Client[Client / Webhook] -->|POST /api/v1/events| Puma[Puma Web Server]
     Puma -->|Validate Schema| Contract[EventIngestionContract]
     Contract -->|Valid| Producer[LeadEvents::Producer]
-    Contract -->|Invalid| Client
     Producer -->|Publish async| Redpanda[Redpanda / Kafka Cluster]
     
     subgraph Background Processing Daemon
@@ -33,26 +111,10 @@ graph TD
     end
 ```
 
-### Ingestion Path
-1. **Ingestion API**: A Rails controller receives event requests, validates them synchronously, and registers a transaction-less publish command.
-2. **Event Schema Validation**: Uses `dry-validation` to validate the incoming structure (checking strict UUIDs, ISO8601 formatting, and payloads).
-3. **Queue Ingestion**: The event is pushed to a Kafka topic (`lead-events`), partitioned by `lead_id` to guarantee message ordering for individual leads.
-4. **HTTP 202 Accepted Response**: Rails returns immediately to the client, guaranteeing ultra-low ingestion latency (<10ms).
+### Database Schemas & Storage Design
 
-### Analytical Storage Path
-1. **Background Consumer**: A multi-threaded, long-running daemon polls Kafka for messages.
-2. **Buffer & Batch Processing**: Messages are accumulated in batches (up to 1,000 messages or 2 seconds buffer time) to avoid analytical write overhead.
-3. **Columnar Database (ClickHouse)**: The consumer executes a bulk insertion into ClickHouse for raw analytics.
-4. **Inverted Index (Elasticsearch)**: The consumer indexes events into Elasticsearch for fast real-time search and filter segmentations.
-5. **Manual Offset Committing**: Once both databases confirm successful writes, the consumer commits the Kafka offset, guaranteeing **at-least-once delivery** and no data loss.
-
----
-
-## 2. Storage & Database Schema Design
-
-### ClickHouse Columnar Schema
-ClickHouse is optimized for heavy write throughput and sequential analytical scans. Events are partition-grouped by month and deduplicated using the `ReplacingMergeTree` engine.
-
+#### ClickHouse Columnar Store (Analytics)
+Raw events are bulk-inserted into ClickHouse using the `ReplacingMergeTree` engine, which handles deduplication and monthly partitions:
 ```sql
 CREATE TABLE rd_analytics.lead_events (
     event_id UUID,
@@ -68,13 +130,22 @@ PRIMARY KEY (event_id)
 ORDER BY (event_id, lead_id, event_type, created_at)
 SETTINGS index_granularity = 8192;
 ```
-* **Deduplication Engine**: `ReplacingMergeTree(processed_at)` ensures that if a network partition triggers a Kafka retry, duplicate events are discarded in the background during merges, maintaining consistency.
-* **LowCardinality**: Applying `LowCardinality` to `event_type` optimizes storage compression and scan speeds since event types are highly repetitive.
-* **Partitioning**: Partitioning by month (`toYYYYMM(created_at)`) allows for efficient data retention management and query pruning.
 
-### Elasticsearch Inverted Index Schema
-Elasticsearch indexes lead events to support complex real-time search queries (e.g., "leads belonging to company X who performed action Y in the last 2 days").
+*Analytical Query Example (ClickHouse)*:
+```sql
+SELECT
+    JSONExtractString(payload, 'referrer') AS traffic_source,
+    count(event_id) AS total_events,
+    countIf(event_type = 'conversion') AS conversions,
+    round(conversions * 100.0 / total_events, 2) AS conversion_rate_percentage
+FROM rd_analytics.lead_events
+WHERE created_at >= now() - INTERVAL 7 DAY
+GROUP BY traffic_source
+ORDER BY total_events DESC;
+```
 
+#### Elasticsearch Inverted Index (Search & Segmentation)
+Elasticsearch indexes dynamic contact attributes to support sub-second filters on search queries:
 ```json
 {
   "mappings": {
@@ -92,139 +163,7 @@ Elasticsearch indexes lead events to support complex real-time search queries (e
 }
 ```
 
----
-
-## 3. Observability & Health Monitoring
-
-Observability is embedded directly into the application code:
-* **Prometheus Metrics (`Yabeda`)**:
-  * `rd_marketing_events_ingested_total`: Tracks the ingestion rate labeled by `event_type`.
-  * `rd_marketing_validation_failures_total`: Monitors bad data attempts.
-  * `rd_marketing_clickhouse_bulk_insert_latency_seconds`: Measures analytical database insert duration.
-  * `rd_marketing_elasticsearch_bulk_index_latency_seconds`: Measures search index speed.
-* **Health Checks**: A standard `/up` endpoint checks if core internal frameworks are online.
-* **Sentry Integration**: Global error handlers catch pipeline crashes, automatically forwarding tracebacks to Sentry.
-
----
-
-## 4. API Specification
-
-### Event Ingestion Endpoint
-* **Method**: `POST`
-* **Path**: `/api/v1/events`
-* **Content-Type**: `application/json`
-
-#### Request Body Example
-```json
-{
-  "event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
-  "lead_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
-  "event_type": "conversion",
-  "timestamp": "2026-06-26T12:00:00.000Z",
-  "properties": {
-    "company_id": "e9a04a60-a299-4674-8b63-125464ad396a",
-    "conversion_page": "landing-page-ebook-rails",
-    "value": 150.00
-  }
-}
-```
-
-#### Response (Success - 202 Accepted)
-```json
-{
-  "event_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
-  "status": "accepted",
-  "message": "Event successfully queued for ingestion."
-}
-```
-
-#### Response (Schema Validation Failure - 422 Unprocessable Content)
-```json
-{
-  "errors": {
-    "event_id": ["must be a valid UUID"],
-    "timestamp": ["must be a valid ISO8601 datetime string"]
-  }
-}
-```
-
----
-
-## 5. Kubernetes & Production Deployment
-
-In a production environment, the service is packaged into Docker containers and run on Kubernetes:
-* **Horizontal Pod Autoscaling (HPA)**:
-  * The `web` (API) service autoscales based on CPU/Memory usage (target: 70% CPU utilization).
-  * The `consumer` daemon service autoscales based on **Kafka Consumer Lag** (using KEDA - Kubernetes Event-driven Autoscaling).
-* **Resource Allocation Rules**:
-  * Enforce strict CPU/Memory requests and limits (`resources.limits.memory` and `resources.requests.cpu`) to prevent resource starvation.
-
----
-
-## 6. How to Run Locally (Computer-Safe Setup)
-
-This project has been explicitly designed to prevent local system lockups. Real Kafka, Clickhouse, and Elasticsearch services are disabled in development by default via **Mock Adapters** that log payload actions and use in-memory test queues.
-
-### Prerequisites
-* Ruby 3.2.2 (RVM recommended)
-* Bundler
-
-### Setup
-1. Clone the repository and go to the project directory:
-   ```bash
-   cd AugustoPresto/lead-streaming-service
-   ```
-2. Install Gem dependencies locally (without Docker):
-   ```bash
-   bundle install
-   ```
-
-### Running the Test Suite (RSpec)
-Execute the fast unit and integration tests (ActiveRecord connection has been completely decoupled, allowing database-free testing):
-```bash
-bundle exec rspec
-```
-
-### Running the Local Web Server
-Start the Puma web server:
-```bash
-bundle exec rails server
-```
-Test the endpoint via cURL:
-```bash
-curl -X POST http://localhost:3000/api/v1/events \
-  -H "Content-Type: application/json" \
-  -d '{
-    "event_id": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
-    "lead_id": "550e8400-e29b-41d4-a716-446655440000",
-    "event_type": "newsletter_signup",
-    "timestamp": "2026-06-26T12:00:00Z",
-    "properties": { "company_id": "770e8400-e29b-41d4-a716-446655440000" }
-  }'
-```
-You will get a `202 Accepted` response. Check `log/development.log` to see the Mock Producer logs.
-
-### Running the React Frontend Dashboard
-To run the interactive simulator and mock database inspector:
-1. Navigate to the `frontend` folder:
-   ```bash
-   cd frontend
-   ```
-2. Install npm dependencies (if not already done):
-   ```bash
-   npm install
-   ```
-3. Start the Vite dev server:
-   ```bash
-   npm run dev
-   ```
-4. Open your browser and navigate to `http://localhost:5173`. You will see the event simulator, pipeline visualizer, and live mock database tables.
-
----
-
-## 8. Running with Full Docker Stack (Optional)
-If you wish to spin up the actual Redpanda, Clickhouse, Elasticsearch, and Prometheus servers, ensure you have Docker installed and run:
-```bash
-docker-compose up --build
-```
-*Observe: Running the full stack requires significant RAM/CPU. If your system has less than 16GB of RAM, stick to the default Local Mock environment.*
+### Observability & Infrastructure
+* **Yabeda Prometheus Exporter**: Exposes custom metrics for validation failures, event counts, and ClickHouse/Elasticsearch insertion latencies.
+* **Kubernetes HPA & KEDA**: Configured to autoscale Puma pods based on CPU and worker daemons based on Redpanda consumer lag.
+* **Docker Compose**: Pre-configured stack available via `docker-compose up --build` for actual Kafka, ClickHouse, and Elasticsearch cluster verification.
