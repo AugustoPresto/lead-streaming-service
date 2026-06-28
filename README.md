@@ -27,11 +27,14 @@ Define active lists and rule-based segments that update in real-time. Growth tea
 ### ⏳ Customer Journeys & Timelines
 Clicking on any contact in the database inspector renders a chronological **Activity Timeline**. Sales representatives can inspect this journey to understand the contact's interest and history before starting outreach.
 
-### ⚡ HubSpot-Style Marketing Dashboard
+### ⚡ HubSpot-Style Marketing Dashboard & Automation Builder
 An interactive React dashboard (`http://localhost:5173`) that lets marketing operators:
 * Select preset customer actions (Newsletter Signup, Pricing Page View, eBook Conversion, Checkout).
 * Auto-generate high-throughput events to simulate massive marketing campaigns (1 to 10 events/second).
-* View live ClickHouse analytics, Elasticsearch segment docs, and Redpanda queue lag.
+* **Create Automation Workflows**: Define active HubSpot-style workflows using triggers (MQL qualification, Newsletter signup, E-commerce Checkout) and actions (Send welcome email, POST webhook to Pipedrive CRM, assign Sales representative).
+* **Live Logs Console**: Monitor live execution logs step-by-step as automation campaigns process streaming events.
+* **Conversion Funnel Analytics**: Dynamic conversion metrics aggregating Visitors -> Subscribers -> Qualified -> MQLs with conversion rates updated on ClickHouse event bulk-writes.
+* **Pipeline SLA Latency Monitor**: Real-time monitoring of average consumer processing times (ingestion latency between event `timestamp` and consumer `processed_at`) keeping track of SLA compliance.
 
 ---
 
@@ -79,10 +82,12 @@ npm run dev
 ```
 Open `http://localhost:5173` in your browser.
 
-### 3. Generate Simulated Campaigns
+### 3. Generate Simulated Campaigns & Automations
 1. On the left side of the dashboard, locate the **High-Throughput Stream Generator** card.
 2. Click **Start Auto-Stream Generator** at **5 e/s** or **10 e/s** to simulate real-time traffic.
 3. Select the **Segmentation Engine** tab in the database inspector to see contacts being grouped automatically into segments like **MQLs** as their scores increase!
+4. Select the **Automation Workflows** tab to activate/toggle automation flows (e.g. Sales Handoff) and watch live execution logs (email dispatch, CRM webhooks) trigger in real-time as users stream in!
+5. Select the **Analytics & Performance DB (ClickHouse)** tab to inspect the conversion funnel and real-time SLA ingestion latency!
 
 ---
 
