@@ -44,7 +44,9 @@ RSpec.describe LeadEvents::Consumer do
          .and change { Elasticsearch::LeadEventRepository.mock_store.size }.by(2)
 
         expect(Clickhouse::LeadEventRepository.mock_store.first[:event_id]).to eq(event_1[:event_id])
+        expect(Clickhouse::LeadEventRepository.mock_store.first[:processed_at]).not_to be_nil
         expect(Elasticsearch::LeadEventRepository.mock_store.last[:event_id]).to eq(event_2[:event_id])
+        expect(Elasticsearch::LeadEventRepository.mock_store.last[:processed_at]).not_to be_nil
       end
     end
 

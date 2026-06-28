@@ -28,7 +28,6 @@ RUN bundle config set --local deployment 'true' && \
 FROM base AS runner
 
 # Copy installed gems and application code
-COPY --from=builder /app/.bundle /app/.bundle
 COPY --from=builder /usr/local/bundle /usr/local/bundle
 COPY . .
 
