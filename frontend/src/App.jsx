@@ -11,7 +11,8 @@ import {
   CheckCircle,
   FileText,
   Activity,
-  ArrowRight
+  ArrowRight,
+  Zap
 } from 'lucide-react';
 
 const API_BASE_URL = 'http://localhost:3000/api/v1/events';
@@ -107,6 +108,55 @@ function App() {
 
   // Toast notifications
   const [toast, setToast] = useState(null);
+
+  // Automation Workflow states
+  const [workflows, setWorkflows] = useState([
+    {
+      id: 'wf_1',
+      name: 'MQL Sales Handoff Workflow',
+      trigger: 'mql',
+      actions: {
+        sendEmail: true,
+        sendWebhook: true,
+        assignSdr: true
+      },
+      active: true
+    },
+    {
+      id: 'wf_2',
+      name: 'Newsletter Welcome Campaign',
+      trigger: 'newsletter_signup',
+      actions: {
+        sendEmail: true,
+        sendWebhook: false,
+        assignSdr: false
+      },
+      active: true
+    }
+  ]);
+  const [workflowLogs, setWorkflowLogs] = useState([]);
+  const [executedWorkflows, setExecutedWorkflows] = useState({});
+  const [newWorkflowName, setNewWorkflowName] = useState('New Automation Workflow');
+  const [newWorkflowTrigger, setNewWorkflowTrigger] = useState('mql');
+  const [newWorkflowActions, setNewWorkflowActions] = useState({
+    sendEmail: true,
+    sendWebhook: false,
+    assignSdr: false
+  });
+
+  const handleCreateWorkflow = (e) => {
+    e.preventDefault();
+    const newWf = {
+      id: `wf_${Date.now()}`,
+      name: newWorkflowName,
+      trigger: newWorkflowTrigger,
+      actions: { ...newWorkflowActions },
+      active: true
+    };
+    setWorkflows(prev => [...prev, newWf]);
+    setNewWorkflowName('New Automation Workflow');
+    showToast('success', `Workflow "${newWf.name}" created and active!`);
+  };
 
   // Auto-generate random values
   const generateRandomValues = () => {
@@ -401,6 +451,111 @@ function App() {
     ? clickhouseStore.filter(x => x.lead_id === selectedEvent.lead_id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)) 
     : [];
 
+  // Evaluate workflow rules in real-time as lead profiles update
+  useEffect(() => {
+    if (leadProfiles.length === 0) return;
+
+    const newExecutions = { ...executedWorkflows };
+    let logsAdded = false;
+    const pendingLogs = [];
+
+    leadProfiles.forEach(lead => {
+      workflows.forEach(wf => {
+        if (!wf.active) return;
+
+        const execKey = `${lead.lead_id}_${wf.id}`;
+        if (newExecutions[execKey]) return; // already executed for this lead
+
+        let triggered = false;
+        if (wf.trigger === 'mql' && lead.score >= 75) {
+          triggered = true;
+        } else if (wf.trigger === 'newsletter_signup' && lead.hasNewsletter) {
+          triggered = true;
+        } else if (wf.trigger === 'add_to_cart' && lead.hasAddToCart) {
+          triggered = true;
+        }
+
+        if (triggered) {
+          newExecutions[execKey] = true;
+          logsAdded = true;
+          
+          const timestamp = new Date().toLocaleTimeString();
+          
+          // Add trigger log
+          pendingLogs.push({
+            id: `log_${Date.now()}_${Math.random()}`,
+            timestamp,
+            leadName: lead.name,
+            leadEmail: lead.email,
+            workflowName: wf.name,
+            type: 'trigger',
+            message: `⚡ Workflow "${wf.name}" triggered for ${lead.name} (${lead.email}) [Score: ${lead.score} pts]`
+          });
+
+          // Simulate actions
+          let delay = 300;
+          if (wf.actions.sendEmail) {
+            setTimeout(() => {
+              setWorkflowLogs(prev => [
+                {
+                  id: `log_email_${Date.now()}_${Math.random()}`,
+                  timestamp: new Date().toLocaleTimeString(),
+                  leadName: lead.name,
+                  leadEmail: lead.email,
+                  workflowName: wf.name,
+                  type: 'email',
+                  message: `✉️ [EMAIL] Sent welcome message & sales deck to ${lead.email} [SUCCESS]`
+                },
+                ...prev
+              ]);
+            }, delay);
+            delay += 400;
+          }
+
+          if (wf.actions.sendWebhook) {
+            setTimeout(() => {
+              setWorkflowLogs(prev => [
+                {
+                  id: `log_webhook_${Date.now()}_${Math.random()}`,
+                  timestamp: new Date().toLocaleTimeString(),
+                  leadName: lead.name,
+                  leadEmail: lead.email,
+                  workflowName: wf.name,
+                  type: 'webhook',
+                  message: `🔗 [WEBHOOK] Forwarded lead details to Pipedrive CRM API [SUCCESS]`
+                },
+                ...prev
+              ]);
+            }, delay);
+            delay += 400;
+          }
+
+          if (wf.actions.assignSdr) {
+            setTimeout(() => {
+              setWorkflowLogs(prev => [
+                {
+                  id: `log_sdr_${Date.now()}_${Math.random()}`,
+                  timestamp: new Date().toLocaleTimeString(),
+                  leadName: lead.name,
+                  leadEmail: lead.email,
+                  workflowName: wf.name,
+                  type: 'sdr',
+                  message: `👤 [SDR] Assigned lead ownership to Team SDR (Sales Representative) [SUCCESS]`
+                },
+                ...prev
+              ]);
+            }, delay);
+          }
+        }
+      });
+    });
+
+    if (logsAdded) {
+      setExecutedWorkflows(newExecutions);
+      setWorkflowLogs(prev => [...pendingLogs.reverse(), ...prev]);
+    }
+  }, [leadProfiles, workflows, executedWorkflows]);
+
   return (
     <div className="app-container">
       {/* Toast Notification */}
@@ -660,7 +815,7 @@ function App() {
             </div>
           </div>
 
-          <div className="tabs-header">
+          <div className="tabs-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
             <button 
               className={`tab-btn ${activeInspectorTab === 'clickhouse' ? 'active' : ''}`}
               onClick={() => setActiveInspectorTab('clickhouse')}
@@ -674,10 +829,23 @@ function App() {
               Lead Segmentation DB (Elasticsearch) ({elasticsearchStore.length})
             </button>
             <button 
+              className={`tab-btn ${activeInspectorTab === 'segmentation' ? 'active' : ''}`}
+              onClick={() => setActiveInspectorTab('segmentation')}
+            >
+              Segmentation Engine ({leadProfiles.length})
+            </button>
+            <button 
+              className={`tab-btn ${activeInspectorTab === 'automation' ? 'active' : ''}`}
+              onClick={() => setActiveInspectorTab('automation')}
+            >
+              <Zap size={14} style={{ marginRight: '0.25rem', display: 'inline' }} />
+              Automation Workflows ({workflows.length})
+            </button>
+            <button 
               className={`tab-btn ${activeInspectorTab === 'kafka' ? 'active' : ''}`}
               onClick={() => setActiveInspectorTab('kafka')}
             >
-              Kafka Stream Buffer (Redpanda) ({kafkaQueue.length})
+              Kafka Stream Buffer ({kafkaQueue.length})
             </button>
           </div>
 
@@ -877,6 +1045,181 @@ function App() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Automation Tab Content */}
+            {activeInspectorTab === 'automation' && (
+              <div className="db-grid">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                  
+                  {/* Left: Active Workflows & Creator */}
+                  <div>
+                    <h3 style={{ fontSize: '1rem', marginBottom: '1rem', color: 'var(--text-highlight)' }}>
+                      Active Automation Workflows
+                    </h3>
+                    
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                      {workflows.map(wf => (
+                        <div key={wf.id} className="card" style={{ padding: '0.85rem', border: '1px solid var(--border-color)', backgroundColor: 'rgba(255,255,255,0.02)', margin: 0 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                            <strong style={{ color: 'var(--text-highlight)' }}>{wf.name}</strong>
+                            <span 
+                              className="badge" 
+                              style={{ 
+                                backgroundColor: wf.active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.1)', 
+                                color: wf.active ? '#34d399' : 'var(--text-muted)',
+                                cursor: 'pointer',
+                                padding: '0.2rem 0.5rem',
+                                fontSize: '0.7rem'
+                              }}
+                              onClick={() => {
+                                setWorkflows(prev => prev.map(w => w.id === wf.id ? { ...w, active: !w.active } : w));
+                                showToast('info', `Workflow "${wf.name}" ${wf.active ? 'paused' : 'activated'}`);
+                              }}
+                            >
+                              {wf.active ? '● Active' : '○ Paused'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                            Trigger: <span className="mono-input" style={{ color: 'var(--color-primary)', fontSize: '0.75rem' }}>{wf.trigger === 'mql' ? 'MQL (Score >= 75)' : wf.trigger === 'newsletter_signup' ? 'newsletter_signup' : 'add_to_cart'}</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            <span>Actions:</span>
+                            {wf.actions.sendEmail && <span style={{ color: 'var(--color-success)' }}>✉️ Email</span>}
+                            {wf.actions.sendWebhook && <span style={{ color: 'var(--color-info)' }}>🔗 Webhook</span>}
+                            {wf.actions.assignSdr && <span style={{ color: 'var(--color-primary)' }}>👤 Assign Owner</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="card" style={{ padding: '1rem', border: '1px solid var(--border-color)', backgroundColor: 'rgba(255,255,255,0.01)', margin: 0 }}>
+                      <h4 style={{ fontSize: '0.85rem', marginBottom: '0.75rem', color: 'var(--text-highlight)' }}>Create New HubSpot-style Workflow</h4>
+                      <form onSubmit={handleCreateWorkflow}>
+                        <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                          <label style={{ fontSize: '0.75rem' }}>Workflow Name</label>
+                          <input 
+                            type="text" 
+                            className="form-control" 
+                            style={{ padding: '0.4rem', fontSize: '0.8rem' }}
+                            value={newWorkflowName}
+                            onChange={(e) => setNewWorkflowName(e.target.value)}
+                            required
+                          />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                          <label style={{ fontSize: '0.75rem' }}>Enrollment Trigger</label>
+                          <select 
+                            className="form-control"
+                            style={{ padding: '0.4rem', fontSize: '0.8rem' }}
+                            value={newWorkflowTrigger}
+                            onChange={(e) => setNewWorkflowTrigger(e.target.value)}
+                          >
+                            <option value="mql">Lead reaches MQL Segment (Score &gt;= 75)</option>
+                            <option value="newsletter_signup">Lead Subscribes to Newsletter</option>
+                            <option value="add_to_cart">Lead Initiates Checkout</option>
+                          </select>
+                        </div>
+                        <div className="form-group" style={{ marginBottom: '1rem' }}>
+                          <label style={{ fontSize: '0.75rem', display: 'block', marginBottom: '0.35rem' }}>Select Actions to Execute</label>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', fontWeight: 'normal', cursor: 'pointer' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={newWorkflowActions.sendEmail}
+                                onChange={(e) => setNewWorkflowActions(prev => ({ ...prev, sendEmail: e.target.checked }))}
+                              />
+                              Send Welcome/Handoff Email to Lead
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', fontWeight: 'normal', cursor: 'pointer' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={newWorkflowActions.sendWebhook}
+                                onChange={(e) => setNewWorkflowActions(prev => ({ ...prev, sendWebhook: e.target.checked }))}
+                              />
+                              Post Lead Webhook Payload to CRM (Pipedrive)
+                            </label>
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', fontWeight: 'normal', cursor: 'pointer' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={newWorkflowActions.assignSdr}
+                                onChange={(e) => setNewWorkflowActions(prev => ({ ...prev, assignSdr: e.target.checked }))}
+                              />
+                              Assign Lead Owner to SDR Representative
+                            </label>
+                          </div>
+                        </div>
+                        <button type="submit" className="btn btn-primary btn-full" style={{ padding: '0.4rem', fontSize: '0.8rem' }}>
+                          Activate Workflow
+                        </button>
+                      </form>
+                    </div>
+                  </div>
+
+                  {/* Right: Live Workflow Execution Logs */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                      <h3 style={{ fontSize: '1rem', color: 'var(--text-highlight)', margin: 0 }}>
+                        Live Workflow Execution Logs
+                      </h3>
+                      <button 
+                        className="btn btn-secondary" 
+                        style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem' }}
+                        type="button"
+                        onClick={() => setWorkflowLogs([])}
+                      >
+                        Clear Logs
+                      </button>
+                    </div>
+                    
+                    <div 
+                      className="event-log-list" 
+                      style={{ 
+                        maxHeight: '420px', 
+                        overflowY: 'auto',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '4px',
+                        backgroundColor: 'rgba(0,0,0,0.15)',
+                        padding: '0.5rem'
+                      }}
+                    >
+                      {workflowLogs.length === 0 ? (
+                        <div className="no-data-placeholder" style={{ padding: '3rem 1rem', fontSize: '0.8rem' }}>
+                          Waiting for events to trigger the active workflows... <br />
+                          (Activate the Auto-Stream generator or submit events manually to watch the magic happen!)
+                        </div>
+                      ) : (
+                        workflowLogs.map((log) => (
+                          <div 
+                            key={log.id} 
+                            style={{ 
+                              padding: '0.5rem 0.75rem', 
+                              borderBottom: '1px solid rgba(255,255,255,0.05)', 
+                              fontSize: '0.75rem',
+                              fontFamily: 'monospace',
+                              lineHeight: '1.4'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
+                              <span style={{ color: 'var(--text-muted)' }}>[{log.timestamp}]</span>
+                              <span style={{ 
+                                color: log.type === 'trigger' ? '#f472b6' : log.type === 'email' ? 'var(--color-success)' : log.type === 'webhook' ? 'var(--color-info)' : 'var(--color-primary)',
+                                fontWeight: 'bold'
+                              }}>
+                                {log.type.toUpperCase()}
+                              </span>
+                            </div>
+                            <div style={{ color: log.type === 'trigger' ? 'var(--text-highlight)' : 'var(--text-muted)' }}>
+                              {log.message}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                  
+                </div>
               </div>
             )}
 
