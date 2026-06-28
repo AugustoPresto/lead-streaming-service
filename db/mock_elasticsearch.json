@@ -1,0 +1,15 @@
+[
+  {
+    "event_id": "424a7146-c4da-4255-93c6-2389d442b94e",
+    "lead_id": "8c0222a0-4c5c-47d8-ad1c-d40ae7bbc32e",
+    "event_type": "page_view",
+    "timestamp": "2026-06-28T14:12:25.195Z",
+    "properties": {
+      "contact_name": "Elena Costa",
+      "contact_email": "elena.costa@techsolutions.com",
+      "company_name": "Tech Solutions",
+      "path": "/features",
+      "referrer": "google_search"
+    }
+  }
+]

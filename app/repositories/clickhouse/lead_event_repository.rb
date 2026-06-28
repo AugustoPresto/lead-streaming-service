@@ -6,11 +6,34 @@ module Clickhouse
 
     class << self
       def mock_store
-        @mock_store ||= []
+        @mock_store ||= load_mock_store
+      end
+
+      def load_mock_store
+        path = Rails.root.join("db", "mock_clickhouse.json")
+        if File.exist?(path)
+          begin
+            JSON.parse(File.read(path), symbolize_names: true)
+          rescue => e
+            Rails.logger.error("[Clickhouse::LeadEventRepository] Failed to read mock file: #{e.message}")
+            []
+          end
+        else
+          []
+        end
+      end
+
+      def save_mock_store!
+        path = Rails.root.join("db", "mock_clickhouse.json")
+        FileUtils.mkdir_p(File.dirname(path))
+        File.write(path, JSON.pretty_generate(mock_store))
+      rescue => e
+        Rails.logger.error("[Clickhouse::LeadEventRepository] Failed to write mock file: #{e.message}")
       end
 
       def clear_mock_store!
         @mock_store = []
+        save_mock_store!
       end
 
       # Performs bulk insertion of event records into ClickHouse
@@ -21,6 +44,7 @@ module Clickhouse
         if mock_enabled?
           Rails.logger.info("[Clickhouse::LeadEventRepository][MOCK] Bulk inserting #{events.size} events into #{TABLE_NAME}")
           mock_store.concat(events)
+          save_mock_store!
           return true
         end
 
