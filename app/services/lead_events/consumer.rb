@@ -23,7 +23,8 @@ module LeadEvents
               lead_id: payload[:lead_id],
               event_type: payload[:event_type],
               timestamp: payload[:timestamp],
-              properties: payload[:properties] || {}
+              properties: payload[:properties] || {},
+              processed_at: Time.now.utc.iso8601(3)
             }
           rescue JSON::ParserError => e
             Rails.logger.error("[LeadEvents::Consumer] Failed to parse message payload: #{e.message}")
