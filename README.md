@@ -7,6 +7,16 @@ An enterprise-ready lead management and marketing automation platform designed t
 
 ---
 
+## ⚡ Deployed Live Demo (Fly.io)
+
+Experience the application running live in production:
+👉 **[https://lead-streaming-api-augusto.fly.dev/](https://lead-streaming-api-augusto.fly.dev/)**
+
+> [!NOTE]
+> **Active Real-Time Simulation:** The application has a lightweight background simulation engine running on Fly.io that automatically streams new lead journeys (Newsletter Signups, Pricing Page Views, Checkout Actions) every 15–30 seconds. Upon opening the dashboard, you will watch live events flow, lead scores update dynamically, and automation workflows trigger in real-time.
+
+---
+
 ## 1. Core Marketing & Operations Features
 
 This platform provides business-ready interfaces and workflows to help growth, marketing, and sales operations teams run real-time campaigns:
