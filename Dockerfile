@@ -1,5 +1,14 @@
 # syntax=docker/dockerfile:1
-# 1. Base stage
+
+# 1. Frontend builder stage
+FROM node:20-slim AS frontend-builder
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+# 2. Base stage
 FROM ruby:3.2.2-slim AS base
 
 WORKDIR /app
@@ -14,7 +23,7 @@ RUN apt-get update -qq && \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# 2. Builder stage: Install gems
+# 3. Builder stage: Install gems
 FROM base AS builder
 
 COPY Gemfile Gemfile.lock ./
@@ -23,12 +32,15 @@ COPY Gemfile Gemfile.lock ./
 RUN bundle config set --local without 'development test' && \
     bundle install --jobs 4 --retry 3
 
-# 3. Final production stage
+# 4. Final production stage
 FROM base AS runner
 
 # Copy installed gems and application code
 COPY --from=builder /usr/local/bundle /usr/local/bundle
 COPY . .
+
+# Copy built React frontend assets to Rails public folder
+COPY --from=frontend-builder /frontend/dist /app/public
 
 # Set production env
 ENV RAILS_ENV=production

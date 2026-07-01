@@ -15,7 +15,9 @@ import {
   Zap
 } from 'lucide-react';
 
-const API_BASE_URL = 'http://localhost:3000/api/v1/events';
+const API_BASE_URL = import.meta.env.DEV
+  ? 'http://localhost:3000/api/v1/events'
+  : '/api/v1/events';
 
 const EVENT_TEMPLATES = {
   page_view: {
