@@ -1,0 +1,25 @@
+# fly.toml file generated for lead-streaming-api-augusto
+
+app = "lead-streaming-api-augusto"
+primary_region = "gru"
+
+[build]
+  # Uses the Dockerfile in the root
+
+[env]
+  MOCK_KAFKA = "true"
+  MOCK_CLICKHOUSE = "true"
+  MOCK_ELASTICSEARCH = "true"
+  RAILS_ENV = "production"
+  PORT = "3000"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[statics]]
+  guest_path = "/app/public"
+  url_prefix = "/"

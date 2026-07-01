@@ -20,8 +20,7 @@ FROM base AS builder
 COPY Gemfile Gemfile.lock ./
 
 # Install and build native gems
-RUN bundle config set --local deployment 'true' && \
-    bundle config set --local without 'development test' && \
+RUN bundle config set --local without 'development test' && \
     bundle install --jobs 4 --retry 3
 
 # 3. Final production stage
