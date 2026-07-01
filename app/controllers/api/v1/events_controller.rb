@@ -65,6 +65,12 @@ module Api
         }
       end
 
+      # GET /api/v1/events/search
+      def search
+        results = Elasticsearch::LeadEventRepository.search(params[:q])
+        render json: results
+      end
+
       # POST /api/v1/events/clear
       def clear
         LeadEvents::Producer.clear_mock_queue!

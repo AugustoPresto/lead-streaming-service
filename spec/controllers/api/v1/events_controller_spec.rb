@@ -134,6 +134,27 @@ RSpec.describe Api::V1::EventsController, type: :controller do
   end
 
 
+  describe "GET #search" do
+    it "filters search results from Elasticsearch" do
+      Elasticsearch::LeadEventRepository.clear_mock_store!
+      event1 = valid_payload.merge(event_id: "11111111-1111-1111-1111-111111111111", properties: { contact_name: "Ana Silva", contact_email: "ana@corp.com" })
+      event2 = valid_payload.merge(event_id: "22222222-2222-2222-2222-222222222222", properties: { contact_name: "Bruno Santos", contact_email: "bruno@corp.com" })
+      
+      Elasticsearch::LeadEventRepository.bulk_index([event1, event2])
+
+      # Exact match
+      get :search, params: { q: "Ana Silva" }, as: :json
+      json = JSON.parse(response.body, symbolize_names: true)
+      expect(json.map { |e| e[:event_id] }).to include(event1[:event_id])
+      expect(json.map { |e| e[:event_id] }).not_to include(event2[:event_id])
+
+      # Fuzzy match (Levenshtein distance <= 2)
+      get :search, params: { q: "Ana Silv" }, as: :json
+      json = JSON.parse(response.body, symbolize_names: true)
+      expect(json.map { |e| e[:event_id] }).to include(event1[:event_id])
+    end
+  end
+
   describe "POST #clear" do
     it "clears all mock queues and stores" do
       LeadEvents::Producer.publish(valid_payload)

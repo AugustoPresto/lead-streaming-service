@@ -91,6 +91,8 @@ function App() {
   const [activeInspectorTab, setActiveInspectorTab] = useState('clickhouse');
   const [searchQuery, setSearchQuery] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
+  const [isSearchingElastic, setIsSearchingElastic] = useState(false);
 
   // Auto-stream event generator states
   const [autoStreamActive, setAutoStreamActive] = useState(false);
@@ -385,17 +387,32 @@ function App() {
     }
   };
 
-  // Filter Elasticsearch lead index based on search query
-  const filteredElasticsearch = elasticsearchStore.filter(item => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      item.event_id?.toLowerCase().includes(query) ||
-      item.lead_id?.toLowerCase().includes(query) ||
-      item.event_type?.toLowerCase().includes(query) ||
-      JSON.stringify(item.properties || {}).toLowerCase().includes(query)
-    );
-  });
+  // Query Elasticsearch via backend search API with a 200ms debounce
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(async () => {
+      if (!searchQuery) {
+        setSearchResults(elasticsearchStore);
+        return;
+      }
+      setIsSearchingElastic(true);
+      try {
+        const baseUrl = API_BASE_URL.replace(/\/events$/, '');
+        const res = await fetch(`${baseUrl}/events/search?q=${encodeURIComponent(searchQuery)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setSearchResults(data);
+        }
+      } catch (err) {
+        console.error('Elasticsearch search error:', err);
+      } finally {
+        setIsSearchingElastic(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery, elasticsearchStore]);
+
+  const filteredElasticsearch = searchResults;
 
   // Group events by lead_id to build lead profiles
   const leadProfiles = Object.values(
@@ -1004,15 +1021,28 @@ function App() {
             {/* Elasticsearch Content */}
             {activeInspectorTab === 'elasticsearch' && (
               <div className="db-grid">
-                <div style={{ marginBottom: '1rem' }}>
+                <div style={{ marginBottom: '1rem', position: 'relative' }}>
                   <input
                     type="text"
                     placeholder="Search leads in Elasticsearch (by Contact ID, Action Type, or Custom Properties)..."
                     className="form-control"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    style={{ fontSize: '0.85rem' }}
+                    style={{ fontSize: '0.85rem', paddingRight: '2.5rem' }}
                   />
+                  {isSearchingElastic && (
+                    <RefreshCw 
+                      size={16} 
+                      className="spin" 
+                      style={{ 
+                        position: 'absolute', 
+                        right: '0.85rem', 
+                        top: '50%', 
+                        marginTop: '-8px',
+                        color: 'var(--color-info)' 
+                      }} 
+                    />
+                  )}
                 </div>
                 {filteredElasticsearch.length === 0 ? (
                   <div className="no-data-placeholder">

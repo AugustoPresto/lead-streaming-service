@@ -13,6 +13,7 @@ Rails.application.routes.draw do
       resources :events, only: [:create] do
         collection do
           get :debug
+          get :search
           post :clear
         end
       end
