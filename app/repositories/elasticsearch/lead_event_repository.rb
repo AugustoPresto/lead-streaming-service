@@ -109,19 +109,22 @@ module Elasticsearch
         return mock_store if query.blank?
 
         q = query.downcase.strip
-        mock_store.select do |event|
+        mock_store.select do |event_raw|
+          event = event_raw.with_indifferent_access
           # Match exact fields
           next true if event[:event_id]&.downcase == q || event[:lead_id]&.downcase == q || event[:event_type]&.downcase == q
 
           # Match properties fields
-          properties = event[:properties] || {}
+          properties = (event[:properties] || {}).with_indifferent_access
           name = properties[:contact_name]&.downcase || ""
           email = properties[:contact_email]&.downcase || ""
           company = properties[:company_name]&.downcase || ""
           path = properties[:path]&.downcase || ""
 
           # Simple Levenshtein distance simulation for typo-tolerant fuzzy matching (distance <= 2)
-          fuzzy_match = levenshtein_distance(name, q) <= 2 || levenshtein_distance(company, q) <= 2
+          # We split name and company into individual tokens (words) to mimic Elasticsearch analyzer behavior
+          fuzzy_match = name.split(/\s+/).any? { |token| levenshtein_distance(token, q) <= 2 } ||
+                        company.split(/\s+/).any? { |token| levenshtein_distance(token, q) <= 2 }
 
           name.include?(q) || email.include?(q) || company.include?(q) || path.include?(q) || fuzzy_match
         end
