@@ -13,7 +13,7 @@ Experience the application running live in production:
 👉 **[https://lead-streaming-api-augusto.fly.dev/](https://lead-streaming-api-augusto.fly.dev/)**
 
 > [!NOTE]
-> **Active Real-Time Simulation:** The application has a lightweight background simulation engine running on Fly.io that automatically streams new lead journeys (Newsletter Signups, Pricing Page Views, Checkout Actions) every 15–30 seconds. Upon opening the dashboard, you will watch live events flow, lead scores update dynamically, and automation workflows trigger in real-time.
+> **Active Real-Time Simulation:** The application runs a lightweight background simulation engine on Fly.io that automatically streams new lead journeys (Newsletter Signups, Pricing Page Views, Checkout Actions) every 5–10 minutes. This mimics a steady, realistic production traffic baseline. Upon opening the dashboard, you will watch live events flow, lead scores update dynamically, and automation workflows trigger in real-time.
 
 ---
 
@@ -177,6 +177,11 @@ Elasticsearch indexes dynamic contact attributes to support sub-second filters o
   }
 }
 ```
+
+* **Intelligent Search API (`GET /api/v1/events/search?q=...`)**:
+  * Utilizes Elasticsearch Query DSL with full-text **Multi-Match** queries across contact name, email, company, and path fields.
+  * Implements **Relevance Boosting** (prioritizing name/email match values higher than company names) and **Typo Tolerance (Fuzzy Search)** with `fuzziness: "AUTO"`.
+  * Simulated in mock mode using a **token-based Levenshtein distance matching algorithm** to replicate standard token analyzer behavior.
 
 ### Observability & Infrastructure
 * **Yabeda Prometheus Exporter**: Exposes custom metrics for validation failures, event counts, and ClickHouse/Elasticsearch insertion latencies.

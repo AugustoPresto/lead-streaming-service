@@ -88,6 +88,7 @@ Diferente do Postgres que armazena os dados agrupados por **linhas**, o ClickHou
 ### B. Elasticsearch (Motor de Busca Baseado em Documentos)
 O Elasticsearch funciona através de um **Índice Invertido** (como o índice remissivo no final de um livro técnico).
 * Em vez de procurar em cada linha se o campo `contact_email` contém `"ana"`, o Elasticsearch mantém uma lista mapeada: a palavra `"ana"` está associada aos registros `[ID 1, ID 4, ID 7]`.
+* **Busca Semântica e Lexical Inteligente (Query DSL + Fuzzy)**: Implementamos um endpoint de busca dedicado (`GET /api/v1/events/search`) que se conecta ao Elasticsearch. Ele utiliza a Query DSL oficial através de cláusulas `bool` e `should` combinando pesquisas nos campos de contato (`contact_name`, `contact_email`, `company_name`) com **Boosting de Relevância** (priorizando nome/e-mail em relação à empresa) e **Typo Tolerance (Fuzzy Match)** com `fuzziness: "AUTO"`. Para garantir o mesmo comportamento em ambiente de testes/mock sem encarecer a infraestrutura, criamos uma simulação baseada em **distância de Levenshtein por tokenização de palavras**.
 * Isso permite consultas de texto e filtros dinâmicos instantâneos para o **Motor de Segmentação** (ex: encontrar leads que visitaram o `/pricing` E preencheram o formulário de eBook).
 
 ---
@@ -128,3 +129,12 @@ Para comprovar a robustez e performance em nível de produção:
 
 ### Idempotência
 Como trabalhamos em rede, existe o risco do cliente enviar o mesmo evento duas vezes devido a uma falha de conexão temporária (problema do *At-least-once delivery*). Para evitar duplicar a pontuação de leads, geramos um `event_id` (UUID) no cliente. O ClickHouse e o Elasticsearch usam esse ID para garantir que o mesmo evento nunca seja computado duas vezes.
+
+---
+
+## 9. Motor de Simulação Dinâmica de Leads (Production-Ready)
+
+Para alimentar a aplicação com dados realistas sem depender de tráfego de usuários reais em produção, o projeto conta com um **Background Simulation Engine** (`LeadEvents::BackgroundGenerator`):
+* **Identidades Dinâmicas Infinitas**: Combina aleatoriamente listas de nomes próprios, sobrenomes e empresas corporativas para criar mais de **6.000 perfis de leads únicos**, com e-mails corporativos realistas.
+* **Consistência de Jornada**: O motor rastreia o estado de cada lead ativo (em uma tabela temporária leve em memória). Isso garante que o mesmo lead mantenha sua identidade (nome, e-mail, empresa, UUID) ao progredir pelas 5 etapas do funil de marketing (Visita -> Newsletter -> Conversão de eBook -> Preços -> Carrinho).
+* **Frequência Realista e Custo Zero**: O motor roda como uma thread leve em segundo plano no próprio servidor Rails (Puma), sem necessitar de VMs ou bancos adicionais. Os eventos são disparados em intervalos realistas de **5 a 10 minutos** para manter o dashboard dinamicamente atualizado sem sobrecarregar a infraestrutura gratuita no Fly.io.
