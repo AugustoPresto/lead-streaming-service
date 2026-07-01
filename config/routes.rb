@@ -5,6 +5,8 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", as: :rails_health_check
 
+  root to: ->(env) { [200, { "Content-Type" => "application/json" }, [{ status: "online", message: "Welcome to the Lead Ingestion & Analytics Streaming Service API", version: "v1", endpoints: { health: "/up", debug: "/api/v1/events/debug", ingest_events: "/api/v1/events [POST]" } }.to_json]] }
+
   # API Ingestion endpoints
   namespace :api do
     namespace :v1 do
