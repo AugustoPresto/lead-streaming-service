@@ -5,16 +5,9 @@ require "securerandom"
 module LeadEvents
   class BackgroundGenerator
     # Predefined profiles for realistic mock leads
-    PRESETS = [
-      { name: "Ana Silva", email: "ana.silva@agenciadigital.com", company: "Agência Digital" },
-      { name: "Bruno Santos", email: "bruno.santos@growthmarketing.io", company: "Growth Marketing" },
-      { name: "Gabriela Lima", email: "gabriela.lima@limaweb.com.br", company: "Lima Web" },
-      { name: "Diego Souza", email: "diego.souza@leadops.com", company: "Lead Ops" },
-      { name: "Elena Costa", email: "elena.costa@techsolutions.com", company: "Tech Solutions" },
-      { name: "Camila Oliveira", email: "camila.oliveira@saasstartups.co", company: "SaaS Startups" },
-      { name: "Felipe Almeida", email: "felipe.almeida@automations.io", company: "Automation Labs" },
-      { name: "Mariana Rocha", email: "mariana.rocha@inboundgroup.com", company: "Inbound Group" }
-    ].freeze
+    FIRST_NAMES = %w[Ana Bruno Gabriela Diego Elena Camila Felipe Mariana Lucas Julia Rodrigo Beatriz Thiago Larissa Gustavo Amanda Rafael Isabela Andre Carolina].freeze
+    LAST_NAMES = %w[Silva Santos Lima Souza Costa Oliveira Almeida Rocha Pereira Ferreira Rodrigues Gomes Martins Araujo Ribeiro Carvalho Cardoso Teixeira Moreira Nogueira].freeze
+    COMPANIES = ["Growth Corp", "Tech Solutions", "SaaS Startups", "Automation Labs", "Inbound Group", "Devs Corp", "Cloud Services", "Analytics Pro", "Marketing Hub", "Sales Flow", "Lead Operations", "FinTech Hub", "Web Solutions"].freeze
 
     JOURNEY_STEPS = [
       { event_type: "page_view", path: "/features", referrer: "google_search" },
@@ -26,8 +19,8 @@ module LeadEvents
 
     class << self
       def start
-        # Only run in development mode and if we want the generator active
-        return unless Rails.env.development?
+        # Run in development or if explicitly enabled via environment variable
+        return unless Rails.env.development? || ENV["START_GENERATOR"] == "true"
         return if @started
 
         @started = true
@@ -57,14 +50,34 @@ module LeadEvents
       private
 
       def tick
-        # Pick a random preset profile
-        profile = PRESETS.sample
-        
-        # Initialize or retrieve state
-        state = @lead_states[profile[:email]] ||= {
-          lead_id: SecureRandom.uuid,
-          step_index: 0
-        }
+        active_emails = @lead_states.keys
+        # Maintain up to 50 active concurrent lead journeys.
+        # If we have less, we have a 40% chance to start a brand new lead, otherwise we continue an active one.
+        should_start_new = active_emails.empty? || (active_emails.size < 50 && rand < 0.4)
+
+        if should_start_new
+          first_name = FIRST_NAMES.sample
+          last_name = LAST_NAMES.sample
+          company = COMPANIES.sample
+          name = "#{first_name} #{last_name}"
+          
+          # Generate clean, realistic, and unique email
+          email_prefix = "#{first_name.downcase}.#{last_name.downcase}#{rand(10..99)}"
+          domain = company.downcase.gsub(/[^a-z0-9]/, "")
+          email = "#{email_prefix}@#{domain}.com"
+          
+          profile = { name: name, email: email, company: company }
+          
+          state = @lead_states[email] = {
+            lead_id: SecureRandom.uuid,
+            step_index: 0,
+            profile: profile
+          }
+        else
+          email = active_emails.sample
+          state = @lead_states[email]
+          profile = state[:profile]
+        end
 
         step = JOURNEY_STEPS[state[:step_index]]
 
